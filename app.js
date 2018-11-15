@@ -64,7 +64,6 @@ async function getNX (interval) {
   }
 }
 
-
 async function getNormal (interval) {
 	if (!interval) {
 		interval = '1h';
@@ -223,6 +222,105 @@ async function getError (interval) {
   }
 }
 
+async function getTopClient (size) {
+	if (!size) {
+		size = 10;
+	}
+	try {
+    const response = await client.search({
+      index: 'dns-for-soc',
+      type: '_doc',
+			body: {
+				"aggs": {
+					"topClient": {
+						"terms": {
+							"field": "client",
+							"size": size,
+							"order": {
+								"_count": "desc"
+							}
+						}
+					}
+				},
+				"query": {
+					"bool": {
+						"must": [
+							{
+								"match_all": {}
+							},
+							{
+								"range": {
+									"timestamp_s": {
+										"gte": 1509728400000,
+										"lte": 1509814800000,
+										"format": "epoch_millis"
+									}
+								}
+							}
+						]
+					}
+				}
+			}
+		});
+		return response;
+	} catch (err) {
+		return null;
+	}
+}
+
+async function getType(type) {
+	try {
+    const response = await client.search({
+      index: 'dns-for-soc',
+      type: '_doc',
+			body: {
+				"aggs": {
+					"result": {
+						"terms": {
+							"field": "query",
+							"size": 20,
+							"order": {
+								"_count": "desc"
+							}
+						}
+					}
+				},
+				"size": 0,
+				"query": {
+					"bool": {
+						"must": [
+							{
+								"match_all": {}
+							},
+							{
+								"range": {
+									"timestamp_s": {
+										"gte": 1509692400000,
+										"lte": 1510038000000,
+										"format": "epoch_millis"
+									}
+								}
+							},
+							{
+								"match_phrase": {
+									"type": {
+										"query": type.toUpperCase()
+									}
+								}
+							}
+						]
+					}
+				}
+			}
+		});
+		return response;
+	}
+	catch (err) {
+		console.log(err.message);
+		return null;
+	}
+}
+
 app.get('/', (req, res) => res.send('Hello'));
 app.get('/nx', (req, res) => {
 	const interval = req.query.interval;
@@ -251,5 +349,26 @@ app.get('/normal', (req, res) => {
 		res.send(normal.aggregations.normal.buckets);
 	});
 });
-  
+
+app.get('/topclient', (req, res) => {
+	getTopClient().then((topClient) => {
+		var clients =  [];
+		clients = topClient.aggregations.topClient.buckets.map((x) => x.key);
+		var condition = {};
+
+		res.send(clients);
+	});
+});
+
+app.get('/type', (req, res) => {
+	const type = req.query.type;
+
+	getType(type).then((data) => {
+		res.setHeader('Content-Type', 'application/json');
+		res.send(
+			data.aggregations.result.buckets,
+		);
+	});
+});
+
 app.listen(port, () => console.log(`Example app listening on port ${port}!`))
