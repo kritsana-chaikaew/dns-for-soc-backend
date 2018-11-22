@@ -324,6 +324,7 @@ async function getType(type) {
 }
 
 app.get('/', (req, res) => res.send('Hello'));
+
 app.get('/nx', (req, res) => {
 	const interval = req.query.interval;
   getNX(interval).then((nx) => {
@@ -336,6 +337,7 @@ app.get('/nx', (req, res) => {
 		});
   });
 });
+
 app.get('/error', (req, res) => {
 	const interval = req.query.interval;
 	getError(interval).then((error) => {
@@ -373,13 +375,18 @@ app.get('/type', (req, res) => {
 	});
 });
 
-io.on('connection', (client) => {
-  client.on('subscribeToTimer', (interval) => {
-    console.log('client is subscribing to timer with interval ', interval);
+const emitToClient = (client, data, channel, topic) => {
+	client.on(channel, (interval) => {
+    console.log('client is ' + channel + ' to timer with interval ', interval);
     setInterval(() => {
-      client.emit('timer', new Date());
+      client.emit(topic, data);
     }, interval);
-  });
+	});
+}
+
+io.on('connection', (client) => {
+	emitToClient(client, new Date(), 'subscribeToTimer', 'timer');
+	emitToClient(client, 'test', 'subscribeToStream', 'stream');
 });
 
 http.listen(port, () => console.log(`Example app listening on port ${port}!`))
