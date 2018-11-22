@@ -2,6 +2,8 @@ const express = require('express')
 const cors = require('cors')
 const app = express()
 const port = 3000
+const http = require('http').Server(app);
+const io = require('socket.io')(http);
 
 const elasticsearch = require('elasticsearch');
 const client = new elasticsearch.Client({
@@ -371,4 +373,13 @@ app.get('/type', (req, res) => {
 	});
 });
 
-app.listen(port, () => console.log(`Example app listening on port ${port}!`))
+io.on('connection', (client) => {
+  client.on('subscribeToTimer', (interval) => {
+    console.log('client is subscribing to timer with interval ', interval);
+    setInterval(() => {
+      client.emit('timer', new Date());
+    }, interval);
+  });
+});
+
+http.listen(port, () => console.log(`Example app listening on port ${port}!`))
