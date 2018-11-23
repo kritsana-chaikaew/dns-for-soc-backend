@@ -462,6 +462,10 @@ io.on('connection', (client) => {
 
 			typeCountStartTime += queryInterval;
 			typeCountEndTime += queryInterval;
+			if (typeCountStartTime > typeCountEndTime) {
+				typeCountStartTime = startTime;
+				typeCountEndTime = startTime + queryInterval;
+			}
 		}, interval);
 	});
 });
