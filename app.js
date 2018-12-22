@@ -4,18 +4,30 @@ const app = express()
 const port = 3000
 const http = require('http').Server(app);
 const io = require('socket.io')(http, { origins: '*:*'});
+const fs = require('fs');
 
-const startTimeStamp = 1509692400000;
-const endTimeStamp = 1510038000000;
+const START_TIME_STAMP = 1509693769000;
+const END_TIME_STAMP = 1510125409000;
+var isStart = false;
+var previousData = [];
+let dga = [];
+
+fs.readFile('20-dga.csv', "utf8", function(err, data) {
+	var dgas = data.split('\n')
+	for (var i=0;i<dgas.length;i++) {
+		if (dgas[i] !== '') {
+			dga.push(dgas[i].split(','))
+		}
+	}
+});
 
 const elasticsearch = require('elasticsearch');
 const client = new elasticsearch.Client({
   host: 'localhost:9200',
 });
 
-let typeCountStartTime = startTimeStamp;
-let typeCountEndTime = endTimeStamp;
-let typeCountCounter = 0;
+let typeCountStartTime = START_TIME_STAMP;
+let typeCountEndTime = END_TIME_STAMP;
 
 app.use(cors());
 
@@ -65,8 +77,8 @@ async function getNX (interval) {
 			        {
 			          "range": {
 			            "timestamp_s": {
-			              "gte": startTimeStamp,
-			              "lte": endTimeStamp,
+			              "gte": START_TIME_STAMP,
+			              "lte": END_TIME_STAMP,
 			              "format": "epoch_millis"
 			            }
 			          }
@@ -118,8 +130,8 @@ async function getNormal (interval) {
 				        {
 				          "range": {
 				            "timestamp_s": {
-				              "gte": startTimeStamp,
-				              "lte": endTimeStamp,
+				              "gte": START_TIME_STAMP,
+				              "lte": END_TIME_STAMP,
 				              "format": "epoch_millis"
 				            }
 				          }
@@ -198,8 +210,8 @@ async function getError (interval) {
 				        {
 				          "range": {
 				            "timestamp_s": {
-				              "gte": startTimeStamp,
-				              "lte": endTimeStamp,
+				              "gte": START_TIME_STAMP,
+				              "lte": END_TIME_STAMP,
 				              "format": "epoch_millis"
 				            }
 				          }
@@ -274,8 +286,8 @@ async function getType (type) {
 							{
 								"range": {
 									"timestamp_s": {
-										"gte": startTimeStamp,
-										"lte": endTimeStamp,
+										"gte": START_TIME_STAMP,
+										"lte": END_TIME_STAMP,
 										"format": "epoch_millis"
 									}
 								}
@@ -424,8 +436,8 @@ app.get('/type', (req, res) => {
 });
 
 app.get('/type-count', (req, res) => {
-	var startTime = startTimeStamp;
-	var endTime = endTimeStamp;
+	var startTime = START_TIME_STAMP;
+	var endTime = END_TIME_STAMP;
 	getTypeCountInWindow(startTime, endTime).then((result) => {
 		var response = getPrettyTypeCountInWindow(result, endTime);
 		res.send(
@@ -434,40 +446,47 @@ app.get('/type-count', (req, res) => {
 	});
 });
 
-const emitToClient = (client, data, channel, topic) => {
-	client.on(channel, (interval) => {
-    console.log('client is ' + channel + ' to timer with interval ', interval);
-    setInterval(() => {
-      client.emit(topic, data);
-    }, interval);
-	});
-}
-
 io.on('connection', (client) => {
+	client.emit('prev', previousData);
 	client.on('subscribeToStream', (setting) => {
-		const startTime = setting.startTime;
-		const queryInterval = setting.queryInterval;
-		const interval = setting.interval;
+		if (!isStart) {
+			isStart = true;
 
-		if (typeCountStartTime === startTimeStamp) {
-			typeCountStartTime = startTime;
-			typeCountEndTime = startTime + queryInterval;
-		}
-
-		setInterval(() => {
-			getTypeCountInWindow(typeCountStartTime, typeCountEndTime).then((result) => {
-				var response = getPrettyTypeCountInWindow(result, typeCountEndTime);
-				client.emit('stream', response);
-			});
-
-			typeCountStartTime += queryInterval;
-			typeCountEndTime += queryInterval;
-			if (typeCountStartTime > typeCountEndTime) {
+			const startTime = setting.startTime;
+			const queryInterval = setting.queryInterval;
+			const interval = setting.interval;
+	
+			if (typeCountStartTime === START_TIME_STAMP) {
 				typeCountStartTime = startTime;
 				typeCountEndTime = startTime + queryInterval;
 			}
-		}, interval);
+	
+			setInterval(() => {
+				getTypeCountInWindow(typeCountStartTime, typeCountEndTime).then((result) => {
+					var response = getPrettyTypeCountInWindow(result, typeCountEndTime);
+					io.sockets.emit('stream', response);
+					previousData.push(response);
+					if (previousData.length > 1000) {
+						previousData.shift();
+					}
+				});
+	
+				typeCountStartTime += queryInterval;
+				typeCountEndTime += queryInterval;
+				if (typeCountStartTime > typeCountEndTime) {
+					typeCountStartTime = START_TIME_STAMP;
+					typeCountEndTime = START_TIME_STAMP + queryInterval;
+				}
+			}, interval);
+		}
 	});
+});
+
+app.get('/dga', (req, res) => {
+	res.send(
+		dga
+	);
+
 });
 
 http.listen(port, () => console.log(`Example app listening on port ${port}!`))
